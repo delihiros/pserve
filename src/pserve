@@ -1,0 +1,48 @@
+import argparse, sys, http.server
+from subprocess import Popen, PIPE, STDOUT
+from urllib.parse import urlparse, parse_qs
+
+pserve = None
+
+class PServe():
+
+    def __init__(self, command):
+        self.command = command
+        self.child = Popen(self.command.split(), stdout=PIPE, stdin=PIPE, stderr=STDOUT)
+
+    def communicate(self, input):
+        self.child.stdin.write(bytes(input, 'utf-8'))
+        self.child.stdin.flush()
+        return self.child.stdout.readline()
+
+class PServeHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        global pserve
+        query_components = parse_qs(urlparse(self.path).query)
+        stdin = query_components['stdin'][0] + '\r\n'
+        result = pserve.communicate(stdin)
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(result)
+        return
+
+def main():
+    global pserve
+
+    parser = argparse.ArgumentParser(
+            description='make your interactive command work as an HTTP server! :)')
+    parser.add_argument('--command', type=str, help='command and arguments')
+    parser.add_argument('--port', type=int, help='port number')
+    args = parser.parse_args()
+
+    pserve = PServe(args.command)
+
+    server = http.server.HTTPServer(('', args.port), PServeHTTPRequestHandler)
+    print('started serving ' + args.command + ' at localhost:' + str(args.port))
+    print('access localhost:' + str(args.port) + '?stdin=whatever-you-like')
+
+    server.serve_forever()
+
+if __name__ == '__main__':
+    main()
