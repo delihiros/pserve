@@ -12,7 +12,7 @@ class PServe():
 
     def __init__(self, command):
         self.command = command
-        self.child = Popen(shlex.split(self.command), stdout=PIPE, stdin=PIPE, stderr=PIPE)
+        self.child = Popen(shlex.split(self.command), stdout=PIPE, stdin=PIPE, stderr=STDOUT)
 
     def communicate(self, input):
         self.child.stdin.write(bytes(input, 'utf-8'))
@@ -26,7 +26,9 @@ class PServeApplication():
 
     def __call__(self, environ, start_response):
         if environ.get('REQUEST_METHOD', '') != 'GET':
-            pass
+            start_response('403 FORBIDDEN', [('Content-type', 'text/plain')])
+            return [b'403 FORBIDDEN']
+
         query_components = parse_qs(environ.get('QUERY_STRING', ''))
         stdin = query_components['stdin'][0] + '\r\n'
         result = self.pserve.communicate(stdin)
