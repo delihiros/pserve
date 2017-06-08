@@ -1,48 +1,56 @@
-import argparse, sys, http.server
-from subprocess import Popen, PIPE, STDOUT
-from urllib.parse import urlparse, parse_qs
+#!/usr/bin/python3
 
-pserve = None
+import argparse
+import sys
+import shlex
+from wsgiref.simple_server import make_server
+from subprocess import Popen, PIPE, STDOUT
+from urllib.parse import parse_qs
+
 
 class PServe():
 
     def __init__(self, command):
         self.command = command
-        self.child = Popen(self.command.split(), stdout=PIPE, stdin=PIPE, stderr=STDOUT)
+        self.child = Popen(shlex.split(self.command), stdout=PIPE, stdin=PIPE, stderr=PIPE)
 
     def communicate(self, input):
         self.child.stdin.write(bytes(input, 'utf-8'))
         self.child.stdin.flush()
         return self.child.stdout.readline()
 
-class PServeHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
-        global pserve
-        query_components = parse_qs(urlparse(self.path).query)
+
+class PServeApplication():
+    def __init__(self, command):
+        self.pserve = PServe(command)
+
+    def __call__(self, environ, start_response):
+        if environ.get('REQUEST_METHOD', '') != 'GET':
+            pass
+        query_components = parse_qs(environ.get('QUERY_STRING', ''))
         stdin = query_components['stdin'][0] + '\r\n'
-        result = pserve.communicate(stdin)
-        self.send_response(200)
-        self.send_header('Content-type', 'text/plain')
-        self.end_headers()
-        self.wfile.write(result)
-        return
+        result = self.pserve.communicate(stdin)
+
+        start_response('200 OK', [('Content-type', 'text/plain')])
+
+        return [result]
+
 
 def main():
-    global pserve
-
     parser = argparse.ArgumentParser(
             description='make your interactive command work as an HTTP server! :)')
     parser.add_argument('--command', type=str, help='command and arguments')
     parser.add_argument('--port', type=int, help='port number')
     args = parser.parse_args()
 
-    pserve = PServe(args.command)
+    application = PServeApplication(args.command)
 
-    server = http.server.HTTPServer(('', args.port), PServeHTTPRequestHandler)
+    server = make_server('', args.port, application)
     print('started serving ' + args.command + ' at localhost:' + str(args.port))
     print('access localhost:' + str(args.port) + '?stdin=whatever-you-like')
 
     server.serve_forever()
+
 
 if __name__ == '__main__':
     main()
